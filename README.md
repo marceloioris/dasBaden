@@ -1,2 +1,2 @@
 # dasBaden
-algoritmo dasBaden
+algoritmo DasBaden
