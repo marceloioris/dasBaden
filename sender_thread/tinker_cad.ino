@@ -108,20 +108,11 @@ void checkWhetherThreadsShouldRun(void);
 void send(char *message);
 void analyseMessage(void);
 
-Thread        threadC1T1        = Thread(); // Digital Pin 1 (Kitchen 1 Sink 1) Thread
-void threadC1T1Callback(void);
-
-Thread        threadB1T1  = Thread(); // Digital Pin 1 (Bathroom 1 Sink 1) Thread
-void threadB1T1Callback(void);
-
-Thread        threadB2T1  = Thread(); // Digital Pin 1 (Bathroom 2 Sink 1) Thread
-void threadB2T1Callback(void);
-
-Thread        threadB2C1  = Thread(); // Digital Pin 1 (Bathroom 2 Shower 1) Thread
+Thread threadButtons = Thread(); // Digital Pins Thread
 void threadB2C1Callback(void);
 
-Thread        threadTempB2C1  = Thread(); // Temperature Sensor (Bathroom 2 Shower 1) Thread
-void threadTempB2C1Callback(void);
+Thread threadTemperatureSensors = Thread(); // Temperature Sensor (Bathroom 2 Shower 1) Thread
+void threadTemperatureSensorsCallback(void);
 
 Thread threadWarmer = Thread();
 void threadWarmerCallback(void);
@@ -131,50 +122,59 @@ void threadCoolingCallback(void);
 
 const unsigned int coolingPeriod = 10000; // Universal Cooling Period
 
-#define NUMBER_OF_POINTS 4
+#define NUMBER_OF_POINTS 5
 
 unsigned int buttons[NUMBER_OF_POINTS] = {2,  // C1T1
                            			      3,  // B1T1
+                                          6,  // B1T2
                            			      4,  // B2T1
                                           5}; // B2C1
 
 unsigned int buttonsLED[NUMBER_OF_POINTS] = {8,   // C1T1
                                              9,   // B1T1
+                                             12,  // B1T2	
                                              10,  // B2T1
                                              11}; // B2C1
 
 unsigned int tempSensor[NUMBER_OF_POINTS] = {0,
                                              0,
                                              0,
-                                             A5}; // B2C1
+                                             0,
+                                             A3}; // B2C1
 
 bool hotPlaces[NUMBER_OF_POINTS] = {false,  // C1T1
                                     false,  // B1T1
+                                    false,  // B1T2
                                     false,  // B2T1
                                     false}; // B2C1
 
 bool toBeActivatedPlaces[NUMBER_OF_POINTS] = {false,  // C1T1
                                               false,  // B1T1
+                                              false,  // B1T2
                                               false,  // B2T1
                                               false}; // B2C1
 
 unsigned long HeatPeriod[NUMBER_OF_POINTS] = {1000,  // C1T1
                                               3000,  // B1T1
+                                              4000,  // B1T2
                                               6000,  // B2T1
                                               10000}; // B2C1
 
-  unsigned long ConsumerPeriod[NUMBER_OF_POINTS] = {2000,  // C1T1
-                                                    2000,  // B1T1
-                                                    2000,  // B2T1
-                                                    3000}; // B2C1
+unsigned long ConsumerPeriod[NUMBER_OF_POINTS] = {2000,  // C1T1
+                                                  2000,  // B1T1
+                                                  2000,  // B1T2
+                                                  2000,  // B2T1
+                                                  3000}; // B2C1
 
 unsigned long buttonActivationMilli[NUMBER_OF_POINTS] = {0,  // C1T1
                                                          0,  // B1T1
+                                                         0,  // B1T2
                                                          0,  // B2T1
                                                          0}; // B2C1
 
 unsigned long placeHeatedMilli[NUMBER_OF_POINTS] = {0,  // C1T1
                                                     0,  // B1T1
+                                                    0,  // B1T2
                                                     0,  // B2T1
                                                     0}; // B2C1
 
@@ -186,43 +186,25 @@ void setup()
 {
   Serial.begin(115200);
 
-  pinMode(buttons[0], INPUT_PULLUP);
-  pinMode(buttons[1], INPUT_PULLUP);
-  pinMode(buttons[2], INPUT_PULLUP);
-  pinMode(buttons[3], INPUT_PULLUP);
-
-  pinMode(buttonsLED[0], OUTPUT);
-  pinMode(buttonsLED[1], OUTPUT);
-  pinMode(buttonsLED[2], OUTPUT);
-  pinMode(buttonsLED[3], OUTPUT);
-
-  pinMode(tempSensor[0],INPUT);
+  for(int buttonIdx = 0; buttonIdx < NUMBER_OF_POINTS; buttonIdx++)
+  {
+    pinMode(buttons[buttonIdx], INPUT_PULLUP);
+    pinMode(buttonsLED[buttonIdx], OUTPUT);
+    pinMode(tempSensor[buttonIdx],INPUT);
+    digitalWrite(buttonsLED[buttonIdx], LOW);
+  }
   
-  threadC1T1.onRun(threadC1T1Callback);
-  threadC1T1.setInterval(200);
+  threadButtons.onRun(threadButtonsCallback);
+  threadButtons.setInterval(200);
 
-  threadB1T1.onRun(threadB1T1Callback);
-  threadB1T1.setInterval(200);
-
-  threadB2T1.onRun(threadB2T1Callback);
-  threadB2T1.setInterval(200);
-
-  threadB2C1.onRun(threadB2C1Callback);
-  threadB2C1.setInterval(200);
-
-  threadTempB2C1.onRun(threadTempB2C1Callback);
-  threadTempB2C1.setInterval(200);
+  threadTemperatureSensors.onRun(threadTemperatureSensorsCallback);
+  threadTemperatureSensors.setInterval(200);
   
   threadWarmer.onRun(threadWarmerCallback);
   threadWarmer.setInterval(200);
   
   threadCooling.onRun(threadCoolingCallback);
   threadCooling.setInterval(200);
-  
-  digitalWrite(buttonsLED[0], LOW);
-  digitalWrite(buttonsLED[1], LOW);
-  digitalWrite(buttonsLED[2], LOW);
-  digitalWrite(buttonsLED[3], LOW);
 }
 
 void loop()
@@ -232,157 +214,109 @@ void loop()
   delay(1);
 }
 
-void threadC1T1Callback(void)
+void threadButtonsCallback(void)
 {
-  if(digitalRead(buttons[0]))
-  {
-    Serial.println("Button C1T1 pressed!");
-    
-    if(hotPlaces[0] == false)
+    int buttonIdx;
+    for(buttonIdx = 0; buttonIdx < NUMBER_OF_POINTS; buttonIdx++)
     {
-      toBeActivatedPlaces[0] = true;
-    
-      buttonActivationMilli[0] = millis();
-    }
-    else
-    {
-      unsigned long currentMillis = millis();
+	  if(digitalRead(buttons[buttonIdx]))
+      {
+        Serial.print("Button ");
+        Serial.print(buttonIdx, DEC);
+        Serial.println(" pressed!");
 
-      placeHeatedMilli[0] = currentMillis;
+        if(hotPlaces[buttonIdx] == false)
+        {
+          for(int i = 0; i <= buttonIdx; i++)
+          {
+            toBeActivatedPlaces[i] = true;
+            
+            if(buttonActivationMilli[i] == 0)
+            {
+              buttonActivationMilli[i] = millis();
+
+              if (i > 0)
+              {
+              	buttonActivationMilli[i] += HeatPeriod[i - 1];
+              }
+            }
+          }
+        }
+        else
+        {
+          unsigned long currentMillis = millis();
+
+          for(int i = 0; i <= buttonIdx; i++)
+          {
+            toBeActivatedPlaces[i] = true;
+            
+            placeHeatedMilli[i] = currentMillis;
+          }
+        }
+      }
     }
-  }
 }
 
-void threadB1T1Callback(void)
+void threadTemperatureSensorsCallback(void)
 {
-  if(digitalRead(buttons[1]))
+  int buttonIdx;
+  for(buttonIdx = 0; buttonIdx < NUMBER_OF_POINTS; buttonIdx++)
   {
-    Serial.println("Button B1T1 pressed!");
-    
-    if(hotPlaces[1] == false)
+    if(tempSensor[buttonIdx] != 0)
     {
-      toBeActivatedPlaces[0] = true;
-      toBeActivatedPlaces[1] = true;
-    
-      if(buttonActivationMilli[0] == 0)
+      int tmp = analogRead(tempSensor[buttonIdx]);
+
+      float voltage = (tmp * 5.0)/1024;//(5*temp)/1024 is to convert the 10 bit number to a voltage reading.
+      float milliVolt = voltage * 1000;//This is multiplied by 1000 to convert it to millivolt.
+
+      float tempSensor =  (milliVolt-500)/10;
+
+      if(tempSensor >= minShowerTemp)
       {
-  	    buttonActivationMilli[0] = millis();
+        unsigned long currentMillis = millis();
+
+        for(int i = 0; i <= buttonIdx; i++)
+        {
+          digitalWrite(buttonsLED[i], HIGH);
+
+          placeHeatedMilli[i] = currentMillis;
+
+          toBeActivatedPlaces[i] = false;
+          hotPlaces[i] = true;
+        }
       }
-    
-      buttonActivationMilli[1] = millis();
-    }
-    else
-    {
-      unsigned long currentMillis = millis();
-
-      placeHeatedMilli[0] = currentMillis;
-      placeHeatedMilli[1] = currentMillis;
-    }
-  }
-}
-
-void threadB2T1Callback(void)
-{
-  if(digitalRead(buttons[2]))
-  {
-    Serial.println("Button B2T1 pressed!");
-    
-    if(hotPlaces[2] == false)
-    {
-      toBeActivatedPlaces[0] = true;
-      toBeActivatedPlaces[1] = true;
-      toBeActivatedPlaces[2] = true;
-    
-      if(buttonActivationMilli[0] == 0)
+      else
       {
-        buttonActivationMilli[0] = millis();
+        // First, lets turn the LEDS off for all
+        // points after the current temp sensor
+        for(int i = buttonIdx; i < NUMBER_OF_POINTS; i++)
+        {
+          digitalWrite(buttonsLED[i], LOW);
+
+          hotPlaces[i] = false;
+        }
+
+        // Now we analyse all previous points
+        int mostPreviousNotToBeActivatedPlaceIdx = -1;
+
+        for(int i = (buttonIdx - 1); i >= 0; i--)
+        {
+          if(toBeActivatedPlaces[i] == true)
+          {
+            break;
+          }
+          
+          mostPreviousNotToBeActivatedPlaceIdx = i;
+        }
+        
+        for(int i = mostPreviousNotToBeActivatedPlaceIdx; i < buttonIdx; i++)
+        {
+          digitalWrite(buttonsLED[i], LOW);
+
+          hotPlaces[i] = false;
+        }
       }
-    
-      if(buttonActivationMilli[1] == 0)
-      {
-  	    buttonActivationMilli[1] = millis();
-      }
-    
-      buttonActivationMilli[2] = millis();
     }
-    else
-    {
-      unsigned long currentMillis = millis();
-
-      placeHeatedMilli[0] = currentMillis;
-      placeHeatedMilli[1] = currentMillis;
-      placeHeatedMilli[2] = currentMillis;
-    }
-  }
-}
-
-void threadB2C1Callback(void)
-{
-  if(digitalRead(buttons[3]))
-  {
-    Serial.println("Button B2C1 pressed!");
-    
-    if(hotPlaces[3] == false)
-    {
-      toBeActivatedPlaces[0] = true;
-      toBeActivatedPlaces[1] = true;
-      toBeActivatedPlaces[2] = true;
-      toBeActivatedPlaces[3] = true;
-    
-      if(buttonActivationMilli[0] == 0)
-      {
-  	    buttonActivationMilli[0] = millis();
-      }
-    
-      if(buttonActivationMilli[1] == 0)
-      {
-  	    buttonActivationMilli[1] = millis();
-      }
-    
-      if(buttonActivationMilli[2] == 0)
-      {
-  	    buttonActivationMilli[2] = millis();
-      }
-    
-      buttonActivationMilli[3] = millis();
-    }
-    else
-    {
-      unsigned long currentMillis = millis();
-
-      placeHeatedMilli[0] = currentMillis;
-      placeHeatedMilli[1] = currentMillis;
-      placeHeatedMilli[2] = currentMillis;
-      placeHeatedMilli[3] = currentMillis;
-    }
-  }
-}
-
-void threadTempB2C1Callback(void)
-{
-  int tmp = analogRead(tempSensor[3]);
-
-  float voltage = (tmp * 5.0)/1024;//(5*temp)/1024 is to convert the 10 bit number to a voltage reading.
-  float milliVolt = voltage * 1000;//This is multiplied by 1000 to convert it to millivolt.
-  
-  float tempSensor =  (milliVolt-500)/10;
-
-  if(tempSensor > minShowerTemp)
-  {
-    unsigned long currentMillis = millis();
-
-    for(int i = 0; i < 4; i++)
-    {
-      digitalWrite(buttonsLED[i], HIGH);
-      
-      placeHeatedMilli[i] = currentMillis;
-
-      toBeActivatedPlaces[i] = false;
-      hotPlaces[i] = true;
-    }
-  }
-  else
-  {
   }
 }
 
@@ -391,7 +325,7 @@ void threadWarmerCallback(void)
   int idx;
   int isAnywhereHot = false;
 
-  for(idx = 3; idx >=0; idx--)
+  for(idx = (NUMBER_OF_POINTS - 1); idx >=0; idx--)
   {
     if(hotPlaces[idx] == true)
     {
@@ -407,212 +341,110 @@ void threadWarmerCallback(void)
   
   unsigned long currentMillis = millis();
 
-  if(toBeActivatedPlaces[0] == true)
+  int buttonIndex;
+  for(buttonIndex = 0; buttonIndex < NUMBER_OF_POINTS; buttonIndex++)
   {
-    long mustElapseTime = HeatPeriod[0];
-
-    if (mustElapseTime <= 0)
+    if(toBeActivatedPlaces[buttonIndex] == true)
     {
-     if(idx != -1)
+      long mustElapseTime = 0;
+      
+      if(buttonIndex == 0)
       {
-        // There is already a hot place, we dont need the full nominal period
-        mustElapseTime = HeatPeriod[0] - HeatPeriod[idx];
+        mustElapseTime = HeatPeriod[buttonIndex];
       }
       else
       {
-        mustElapseTime = HeatPeriod[0];
+        int reducedTime = 0;
+
+        for(int i = 0; i <= buttonIndex; i++)
+        {
+          int tmp = buttonActivationMilli[i];
+
+          if(buttonActivationMilli[i] == buttonActivationMilli[buttonIndex])
+          {
+            break;
+          }
+
+          reducedTime = tmp;
+        }
+
+        mustElapseTime = HeatPeriod[buttonIndex] - (buttonActivationMilli[buttonIndex] - reducedTime);
       }
-    }
-    
-    if(long(currentMillis - buttonActivationMilli[0]) >= mustElapseTime)
-    {
-      digitalWrite(buttonsLED[0], HIGH);
-      
-      placeHeatedMilli[0] = currentMillis + ConsumerPeriod[0];
+
+      if (mustElapseTime <= 0)
+      {
+       if(idx != -1)
+        {
+          // If there is already a hot place, we dont need the full nominal period
+          mustElapseTime = HeatPeriod[buttonIndex] - HeatPeriod[idx];
+        }
+        else
+        {
+          mustElapseTime = HeatPeriod[buttonIndex];
+        }
+      }
+
+      if(long(currentMillis - buttonActivationMilli[buttonIndex]) >= mustElapseTime)
+      {
+        digitalWrite(buttonsLED[buttonIndex], HIGH);
+		hotPlaces[buttonIndex] = true;
         
-      toBeActivatedPlaces[0] = false;
-      hotPlaces[0] = true;
-    }
-  }
-  
-  if(toBeActivatedPlaces[1] == true)
-  {
-    long mustElapseTime = HeatPeriod[1] - (buttonActivationMilli[1] - buttonActivationMilli[0]);
+        for(int i = 0; i <= buttonIndex; i++)
+        {
+          placeHeatedMilli[i] = currentMillis + ConsumerPeriod[buttonIndex];
 
-    if (mustElapseTime <= 0)
-    {
-      if(idx != -1)
-      {
-        // There is already a hot place, we dont need the full nominal period
-        mustElapseTime = HeatPeriod[1] - HeatPeriod[idx];
+          toBeActivatedPlaces[i] = false;
+        }
       }
-      else
-      {
-        mustElapseTime = HeatPeriod[1];
-      }
-    }
-    
-    if(long(currentMillis - buttonActivationMilli[1]) >= mustElapseTime)
-    {
-      digitalWrite(buttonsLED[1], HIGH);
-      
-      placeHeatedMilli[0] = currentMillis + ConsumerPeriod[1];
-      placeHeatedMilli[1] = currentMillis + ConsumerPeriod[1];
-      
-      toBeActivatedPlaces[0] = false;
-      toBeActivatedPlaces[1] = false;
-      hotPlaces[1] = true;
-    }
-  }
-  
-  if(toBeActivatedPlaces[2] == true)
-  {
-    long mustElapseTime = HeatPeriod[2] - (buttonActivationMilli[2] - buttonActivationMilli[1]);
-
-    if (mustElapseTime <= 0)
-    {
-      if(idx != -1)
-      {
-        // There is already a hot place, we dont need the full nominal period
-        mustElapseTime = HeatPeriod[2] - HeatPeriod[idx];
-      }
-      else
-      {
-        mustElapseTime = HeatPeriod[2];
-      }
-    }
-    
-    if(long(currentMillis - buttonActivationMilli[2]) >= mustElapseTime)
-    {
-      digitalWrite(buttonsLED[2], HIGH);
-      
-      placeHeatedMilli[0] = currentMillis + ConsumerPeriod[2];
-      placeHeatedMilli[1] = currentMillis + ConsumerPeriod[2];
-      placeHeatedMilli[2] = currentMillis + ConsumerPeriod[2];
-      
-      toBeActivatedPlaces[0] = false;
-      toBeActivatedPlaces[1] = false;
-      toBeActivatedPlaces[2] = false;
-      hotPlaces[2] = true;
-    }
-  }
-  
-  if(toBeActivatedPlaces[3] == true)
-  {
-    long mustElapseTime = HeatPeriod[3] - (buttonActivationMilli[3] - buttonActivationMilli[2]);
-	
-    if (mustElapseTime <= 0)
-    {
-      if(idx != -1)
-      {
-        // There is already a hot place, we dont need the full nominal period
-        mustElapseTime = HeatPeriod[3] - HeatPeriod[idx];
-      }
-      else
-      {
-        mustElapseTime = HeatPeriod[3];
-      }
-    }
-    
-    if(long(currentMillis - buttonActivationMilli[3]) >= mustElapseTime)
-    {
-      digitalWrite(buttonsLED[3], HIGH);
-      
-      placeHeatedMilli[0] = currentMillis + ConsumerPeriod[3];
-      placeHeatedMilli[1] = currentMillis + ConsumerPeriod[3];
-      placeHeatedMilli[2] = currentMillis + ConsumerPeriod[3];
-      placeHeatedMilli[3] = currentMillis + ConsumerPeriod[3];
-      
-      toBeActivatedPlaces[0] = false;
-      toBeActivatedPlaces[1] = false;
-      toBeActivatedPlaces[2] = false;
-      toBeActivatedPlaces[3] = false;
-      hotPlaces[3] = true;
     }
   }
 }
 
 void threadCoolingCallback(void)
 {
-  if((toBeActivatedPlaces[0] == false)	&&
-     (toBeActivatedPlaces[1] == false)	&&
-     (toBeActivatedPlaces[2] == false)	&&
-     (toBeActivatedPlaces[3] == false))
+  bool toBeCooled = true;
+  for(int i = 0; i < NUMBER_OF_POINTS; i++)
+  {
+    if(toBeActivatedPlaces[i] == true)
+    {
+      toBeCooled = false;
+      
+      break;
+    }
+  }
+  
+  if(toBeCooled)
   {
     unsigned long currentMillis = millis();
 
-    if(hotPlaces[3] == true)
+    int buttonIdx;
+    for(buttonIdx = 0; buttonIdx < NUMBER_OF_POINTS; buttonIdx++)
     {
-      if((currentMillis > placeHeatedMilli[3]) && (long(currentMillis - placeHeatedMilli[3]) >= coolingPeriod))
+      if(hotPlaces[buttonIdx] == true)
       {
-        digitalWrite(buttonsLED[3], LOW);
+        if((currentMillis > placeHeatedMilli[buttonIdx]) && (long(currentMillis - placeHeatedMilli[buttonIdx]) >= coolingPeriod))
+        {
+          digitalWrite(buttonsLED[buttonIdx], LOW);
 
-        hotPlaces[3] = false;
-        buttonActivationMilli[3] = 0;
-        placeHeatedMilli[3] = 0;
+          hotPlaces[buttonIdx] = false;
+          buttonActivationMilli[buttonIdx] = 0;
+          placeHeatedMilli[buttonIdx] = 0;
+        }
       }
     }
-    if(hotPlaces[2] == true)
-    {
-      if((currentMillis > placeHeatedMilli[2]) && (long(currentMillis - placeHeatedMilli[2]) >= coolingPeriod))
-      {
-        digitalWrite(buttonsLED[2], LOW);
-
-        hotPlaces[2] = false;
-        buttonActivationMilli[2] = 0;
-        placeHeatedMilli[2] = 0;
-      }
-    }
-    if(hotPlaces[1] == true)
-    {
-      if((currentMillis > placeHeatedMilli[1]) && (long(currentMillis - placeHeatedMilli[1]) >= coolingPeriod))
-      {
-        digitalWrite(buttonsLED[1], LOW);
-
-        hotPlaces[1] = false;
-        buttonActivationMilli[1] = 0;
-        placeHeatedMilli[1] = 0;
-      }
-    }
-    if(hotPlaces[0] == true)
-    {
-      if((currentMillis > placeHeatedMilli[0]) && (long(currentMillis - placeHeatedMilli[0]) >= coolingPeriod))
-      {
-        digitalWrite(buttonsLED[0], LOW);
-
-        hotPlaces[0] = false;
-        buttonActivationMilli[0] = 0;
-        placeHeatedMilli[0] = 0;
-      }
-    }
-  }
+  } 
 }
 
 void checkWhetherThreadsShouldRun(void)
 {
-  if(threadC1T1.shouldRun())
+  if(threadButtons.shouldRun())
   {
-    threadC1T1.run();
-  }
-
-  if(threadB1T1.shouldRun())
-  {
-    threadB1T1.run();
-  }
-
-  if(threadB2T1.shouldRun())
-  {
-    threadB2T1.run();
-  }
-
-  if(threadB2C1.shouldRun())
-  {
-    threadB2C1.run();
+    threadButtons.run();
   }
   
-  if(threadTempB2C1.shouldRun())
+  if(threadTemperatureSensors.shouldRun())
   {
-    threadTempB2C1.run();
+    threadTemperatureSensors.run();
   }
   
   if(threadWarmer.shouldRun())
